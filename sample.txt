@@ -1,0 +1,10 @@
+let x - int = 42
+let s - str = "Hello World!"
+LET_T NAME_T TYPE_T NAME_OF_TYPE_T EQ_T STR_LITERAL_T
+
+println(s + x=str)
+FUNCT_T LEFT_R_BRACKETS_T NAME_T PLUS_T NAME_T EQ_T NAME_OF_TYPE_T RIGHT_R_BRACKETS_T
+
+println "New line! "
+FUNCT_T
+print "Or, maybe, not."
