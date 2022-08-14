@@ -1,0 +1,33 @@
+box SomeSuperClass {
+    name;
+
+    do_something_super(self) {
+        return self.name;
+    }
+}
+
+box SampleClass <- some_super_class {
+    counter;
+
+    init(name, counter) {
+        super(name);
+        self.counter = counter;
+    }
+
+    do_something(self) {
+        return name + counter=String;
+    }
+
+    =String(self) {
+        return self.do_something();
+    }
+}
+
+// This is comment
+
+main() {
+    let class_instance = sample_class("123", 42);
+
+    print class_instance.do_something_super() + " "
+                    + class_instance.do_something();
+}
