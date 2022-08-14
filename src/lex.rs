@@ -1,5 +1,6 @@
 use std::{env, fs, io};
 use std::collections::HashMap;
+use std::fmt::{Debug, format};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -107,9 +108,6 @@ impl Lexer {
             0
         } else {
             // self.build_ast();
-            for token in &tokens {
-                println!("{:?}", token);
-            }
             tokens.len()
         }
     }
@@ -186,6 +184,11 @@ impl Lexer {
         self.file.chars().nth(self.current_pos - 1)
     }
 
+    fn advance_by(&mut self, n: usize) -> Option<char> {
+        self.current_pos += n;
+        self.file.chars().nth(self.current_pos - n)
+    }
+
     fn add_token(list: &mut Vec<Token>, token_type: Token) {
         list.push(token_type);
     }
@@ -230,9 +233,30 @@ impl Lexer {
                     if self.matching('/') {
                         while let Some(s) = self.peek(0) {
                             if s == '\n' {
+                                self.line += 1;
+                                self.advance();
                                 break;
                             }
                             self.advance();
+                        }
+                    } else if self.matching('*') {  // Challenges 4.
+                        let mut closed = false;
+                        let start = self.line;
+                        while let Some(s) = self.peek(0) {
+                            if s == '*' {
+                                if let Some('/') = self.peek(1) {
+                                    self.advance_by(2);
+                                    closed = true;
+                                    break;
+                                }
+                            } else if s == '\n' {
+                                self.line += 1;
+                            }
+                            print!("{s}");
+                            self.advance();
+                        }
+                        if !closed {
+                            self.error(self.line, &format!("An unclosed multi-line comment that starts on line {start}."));
                         }
                     } else {
                         Self::add_token(&mut list, Token::SLASH);

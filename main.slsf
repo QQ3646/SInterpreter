@@ -23,7 +23,11 @@ box SampleClass <- some_super_class {
     }
 }
 
-// This is comment
+// This is a comment
+
+/* This also is a
+   comment */
+
 
 main() {
     let class_instance = sample_class("123", 42);
