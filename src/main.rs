@@ -1,7 +1,7 @@
 use log::{debug, error, log_enabled, info, Level};
 
-mod lex;
-use lex::Lexer;
+mod libs;
+use libs::lex::Lexer;
 
 fn main() {
     env_logger::init();

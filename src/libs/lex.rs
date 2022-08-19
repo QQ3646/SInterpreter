@@ -1,10 +1,11 @@
 use std::{env, fs, io};
 use std::collections::HashMap;
 use std::fmt::{Debug, format};
+use crate::libs::lex::Token::SELF;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
-enum Token {
+pub enum Token {
     // Single characters tokens
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -54,6 +55,55 @@ enum Token {
     NIL,
 
     EOF,
+}
+
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        let s;
+        match self {
+            Token::LEFT_PAREN => "(",
+            Token::RIGHT_PAREN => ")",
+            Token::LEFT_BRACE => "{",
+            Token::RIGHT_BRACE => "}",
+            Token::COMMA => ",",
+            Token::DOT => ".",
+            Token::MINUS => "-",
+            Token::PLUS => "+",
+            Token::SEMICOLON => ";",
+            Token::SLASH => "/",
+            Token::STAR => "*",
+            Token::BANG => "!",
+            Token::BANG_EQUAL => "!=",
+            Token::EQUAL => "=",
+            Token::EQUAL_EQUAL => "==",
+            Token::GREATER => ">",
+            Token::GREATER_EQUAL => ">=",
+            Token::LESS => "<",
+            Token::LESS_EQUAL => "<=",
+            Token::IDENTIFIER => "identifier",
+            Token::STRING(str) => str,
+            Token::NUMBER(n) => { s = format!("{}", n); &s },
+            Token::BOX => "box",
+            Token::ELSE => "else",
+            Token::FUN => "fun",
+            Token::FOR => "for",
+            Token::IF => "if",
+            Token::OR => "or",
+            Token::PRINT => "print",
+            Token::RETURN => "return",
+            Token::SUPER => "super",
+            Token::SELF => "self",
+            Token::TRUE => "true",
+            Token::FALSE => "false",
+            Token::AND => "and",
+            Token::LET => "let",
+            Token::WHILE => "while",
+            Token::FIELDS => "depreciated",
+            Token::FUNCTION => "depreciated",
+            Token::NIL => "nil",
+            Token::EOF => "EOF",
+        }.to_string()
+    }
 }
 
 pub struct Lexer {
