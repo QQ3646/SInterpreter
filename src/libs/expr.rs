@@ -1,11 +1,12 @@
 //That file mostly created by "metaprogramming" package.
 
 pub mod ast {
-    use crate::libs::lex::Token;
+    use crate::libs::lex::{Token};
 
     pub enum Object {
         Number(f64),
         Str(String),
+        Bool(bool),
 
         Nil,
     }
@@ -15,6 +16,7 @@ pub mod ast {
             match self {
                 Object::Number(n) => n.to_string(),
                 Object::Str(s) => s.clone(),
+                Object::Bool(b) => b.to_string(),
                 Object::Nil => "nil".to_string(),
             }
         }

@@ -1,11 +1,40 @@
-use std::{env, fs, io};
+use crate::libs::expr::ast::Object;
 use std::collections::HashMap;
-use std::fmt::{Debug, format};
-use crate::libs::lex::Token::SELF;
+use std::fmt::Debug;
+use std::{env, fs, io};
+use crate::libs::expr::visitor::Visitor;
+use crate::libs::parser::Parser;
+
+#[derive(Clone)]
+pub enum LiteralValue {
+    Number(f64),
+    String(String),
+    Nil,
+}
+
+impl ToString for LiteralValue {
+    fn to_string(&self) -> String {
+        match self {
+            LiteralValue::Number(n) => n.to_string(),
+            LiteralValue::String(s) => s.clone(),
+            LiteralValue::Nil => "Nil".to_string(),
+        }
+    }
+}
+
+impl LiteralValue {
+    pub fn to_object(&self) -> Object {
+        match self {
+            LiteralValue::Number(n) => Object::Number(*n),
+            LiteralValue::String(s) => Object::Str(s.clone()),
+            LiteralValue::Nil => Object::Nil,
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Debug)]
-pub enum Token {
+#[derive(Copy, Clone, Debug)]
+pub enum TokenType {
     // Single characters tokens
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -31,8 +60,8 @@ pub enum Token {
 
     // Literals
     IDENTIFIER,
-    STRING(String),
-    NUMBER(f64),
+    STRING,
+    NUMBER,
 
     // Some keywords
     BOX,
@@ -50,73 +79,100 @@ pub enum Token {
     AND,
     LET,
     WHILE,
-    FIELDS,
-    FUNCTION,
     NIL,
 
     EOF,
 }
 
-impl ToString for Token {
-    fn to_string(&self) -> String {
-        let s;
-        match self {
-            Token::LEFT_PAREN => "(",
-            Token::RIGHT_PAREN => ")",
-            Token::LEFT_BRACE => "{",
-            Token::RIGHT_BRACE => "}",
-            Token::COMMA => ",",
-            Token::DOT => ".",
-            Token::MINUS => "-",
-            Token::PLUS => "+",
-            Token::SEMICOLON => ";",
-            Token::SLASH => "/",
-            Token::STAR => "*",
-            Token::BANG => "!",
-            Token::BANG_EQUAL => "!=",
-            Token::EQUAL => "=",
-            Token::EQUAL_EQUAL => "==",
-            Token::GREATER => ">",
-            Token::GREATER_EQUAL => ">=",
-            Token::LESS => "<",
-            Token::LESS_EQUAL => "<=",
-            Token::IDENTIFIER => "identifier",
-            Token::STRING(str) => str,
-            Token::NUMBER(n) => { s = format!("{}", n); &s },
-            Token::BOX => "box",
-            Token::ELSE => "else",
-            Token::FUN => "fun",
-            Token::FOR => "for",
-            Token::IF => "if",
-            Token::OR => "or",
-            Token::PRINT => "print",
-            Token::RETURN => "return",
-            Token::SUPER => "super",
-            Token::SELF => "self",
-            Token::TRUE => "true",
-            Token::FALSE => "false",
-            Token::AND => "and",
-            Token::LET => "let",
-            Token::WHILE => "while",
-            Token::FIELDS => "depreciated",
-            Token::FUNCTION => "depreciated",
-            Token::NIL => "nil",
-            Token::EOF => "EOF",
-        }.to_string()
+#[derive(Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub literal: LiteralValue,
+    pub(crate) line: usize,
+    pub lexeme: String,
+}
+
+impl Token {
+    fn new(token_type: TokenType, literal: LiteralValue, line: usize, lexeme: String) -> Self {
+        Self {
+            token_type,
+            literal,
+            line,
+            lexeme,
+        }
     }
 }
 
-pub struct Lexer {
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.token_type.to_string(),
+            self.lexeme,
+            self.literal.to_string()
+        )
+    }
+}
+
+impl ToString for TokenType {
+    fn to_string(&self) -> String {
+        match self {
+            TokenType::LEFT_PAREN => "(",
+            TokenType::RIGHT_PAREN => ")",
+            TokenType::LEFT_BRACE => "{",
+            TokenType::RIGHT_BRACE => "}",
+            TokenType::COMMA => ",",
+            TokenType::DOT => ".",
+            TokenType::MINUS => "-",
+            TokenType::PLUS => "+",
+            TokenType::SEMICOLON => ";",
+            TokenType::SLASH => "/",
+            TokenType::STAR => "*",
+            TokenType::BANG => "!",
+            TokenType::BANG_EQUAL => "!=",
+            TokenType::EQUAL => "=",
+            TokenType::EQUAL_EQUAL => "==",
+            TokenType::GREATER => ">",
+            TokenType::GREATER_EQUAL => ">=",
+            TokenType::LESS => "<",
+            TokenType::LESS_EQUAL => "<=",
+            TokenType::IDENTIFIER => "identifier",
+            TokenType::STRING => "String",
+            TokenType::NUMBER => "Number",
+            TokenType::BOX => "box",
+            TokenType::ELSE => "else",
+            TokenType::FUN => "fun",
+            TokenType::FOR => "for",
+            TokenType::IF => "if",
+            TokenType::OR => "or",
+            TokenType::PRINT => "print",
+            TokenType::RETURN => "return",
+            TokenType::SUPER => "super",
+            TokenType::SELF => "self",
+            TokenType::TRUE => "true",
+            TokenType::FALSE => "false",
+            TokenType::AND => "and",
+            TokenType::LET => "let",
+            TokenType::WHILE => "while",
+            TokenType::NIL => "nil",
+            TokenType::EOF => "EOF",
+        }
+            .to_string()
+    }
+}
+
+pub struct Lox {
     file: String,
 
+    start_pos: usize,
     current_pos: usize,
     gotten_error: bool,
     line: usize,
 
-    keywords: HashMap<&'static str, Token>,
+    keywords: HashMap<&'static str, TokenType>,
 }
 
-impl Lexer {
+impl Lox {
     pub fn init() -> Result<Self, io::Error> {
         let file_name = env::args().nth(1).unwrap_or_else(|| {
             println!("No input file name. \"main.slsf\" will be used instead.");
@@ -124,15 +180,28 @@ impl Lexer {
             "main.slsf".to_string()
         });
         let file = fs::read_to_string(file_name)?;
-        let keywords: HashMap<&'static str, Token> = HashMap::from([("or", Token::OR),
-            ("and", Token::AND), ("box", Token::BOX), ("else", Token::ELSE), ("if", Token::IF),
-            ("fun", Token::FUNCTION), ("print", Token::PRINT), ("return", Token::RETURN),
-            ("super", Token::SUPER), ("self", Token::SELF), ("true", Token::TRUE),
-            ("false", Token::FALSE), ("let", Token::LET), ("while", Token::WHILE), ("nil", Token::NIL)]);
+        let keywords: HashMap<&'static str, TokenType> = HashMap::from([
+            ("or", TokenType::OR),
+            ("and", TokenType::AND),
+            ("box", TokenType::BOX),
+            ("else", TokenType::ELSE),
+            ("if", TokenType::IF),
+            ("fun", TokenType::FUN),
+            ("print", TokenType::PRINT),
+            ("return", TokenType::RETURN),
+            ("super", TokenType::SUPER),
+            ("self", TokenType::SELF),
+            ("true", TokenType::TRUE),
+            ("false", TokenType::FALSE),
+            ("let", TokenType::LET),
+            ("while", TokenType::WHILE),
+            ("nil", TokenType::NIL),
+        ]);
 
         Ok(Self {
             file,
 
+            start_pos: 0,
             current_pos: 0,
             gotten_error: false,
             line: 1,
@@ -143,42 +212,48 @@ impl Lexer {
 
     fn error(&mut self, line: usize, message: &str) {
         self.gotten_error = true;
-        self.report_error(line, message);
+        Self::report_error(line, "", message);
     }
 
-    fn report_error(&mut self, line: usize, message: &str) {
-        eprintln!("Error on line {}: {}", line, message);
+    pub fn report_error(line: usize, where_: &str, message: &str) {
+        eprintln!("[line {line}] Error {where_}: {message}");
     }
 
-    pub fn run(&mut self) -> usize {
+    pub fn run(&mut self) {
         let tokens = self.get_token_list();
 
         println!("Tokens count: {}", tokens.len());
+        for token in &tokens {
+            println!("{}", token.to_string())
+        }
         if self.gotten_error {
-            0
-        } else {
-            // self.build_ast();
-            tokens.len()
+            return;
+        }
+        let mut parser = Parser::new(tokens);
+        let expr = parser.parse();
+        if let Ok(expr) = expr {
+            let mut ast_printer = crate::libs::ast_printer::AstPrinter {};
+
+            println!("{}", ast_printer.visit_expr(&expr).unwrap());
         }
     }
 
-    fn scan_identifier(&mut self) -> Token {
+    fn scan_identifier(&mut self) -> TokenType {
         let start = self.current_pos;
-        while let Some('0'..='9' | 'a'..='z' | 'A'..='Z' | '_') = self.peek(0) {
+        while let Some('0'..='9' | 'a'..='z' | 'A'..='Z' | '_') = self.peek_by(0) {
             self.advance();
         }
 
         let text = self.file[start - 1..self.current_pos].to_string();
         let token_option = self.keywords.get(&text as &str);
         (if let None = token_option {
-            return Token::IDENTIFIER;
+            return TokenType::IDENTIFIER;
         });
-        token_option.unwrap().clone()
+        *token_option.unwrap()
     }
 
-    fn scan_string(&mut self) -> Token {
-        let start = self.current_pos;
-        while let Some(s) = self.peek(0) {
+    fn scan_string(&mut self) -> TokenType {
+        while let Some(s) = self.peek_by(0) {
             if s == '"' {
                 break;
             } else if s == '\n' {
@@ -191,28 +266,23 @@ impl Lexer {
         }
         self.advance();
 
-        Token::STRING(self.file[start..self.current_pos - 1].to_string())
+        TokenType::STRING
     }
 
-    fn scan_number(&mut self) -> Token {
-        let start = self.current_pos;
-
-        while let Some('0'..='9') = self.peek(0) {
+    fn scan_number(&mut self) -> TokenType {
+        while let Some('0'..='9') = self.peek_by(0) {
             self.advance();
         }
 
-        if let Some('.') = self.peek(0) {
-            if let Some('0'..='9') = self.peek(1) {
+        if let Some('.') = self.peek_by(0) {
+            if let Some('0'..='9') = self.peek_by(1) {
                 self.advance();
 
                 while let Some('0'..='9') = self.advance() {}
             }
         }
 
-        Token::NUMBER(self.file[start - 1..self.current_pos].parse::<f64>().unwrap_or_else(|_| {
-            self.error(self.line, "Failed to parse number.");
-            f64::NAN
-        }))
+        TokenType::NUMBER
     }
 
     fn matching(&mut self, expect: char) -> bool {
@@ -225,7 +295,7 @@ impl Lexer {
         false
     }
 
-    fn peek(&self, pos: usize) -> Option<char> {
+    fn peek_by(&self, pos: usize) -> Option<char> {
         self.file.chars().nth(self.current_pos + pos)
     }
 
@@ -239,49 +309,82 @@ impl Lexer {
         self.file.chars().nth(self.current_pos - n)
     }
 
-    fn add_token(list: &mut Vec<Token>, token_type: Token) {
-        list.push(token_type);
+    // fn add_token(list: &mut Vec<TokenType>, token_type: TokenType) {
+    //     list.push(token_type);
+    // }
+
+    fn add_token(&mut self, list: &mut Vec<Token>, token_type: TokenType) {
+        let lexeme = self.file[self.start_pos..self.current_pos].to_string();
+        let literal = match token_type {
+            TokenType::NUMBER => LiteralValue::Number(
+                self.file[self.start_pos..self.current_pos]
+                    .parse::<f64>()
+                    .unwrap_or_else(|_| {
+                        self.error(self.line, "Failed to parse number.");
+                        f64::NAN
+                    }),
+            ),
+            TokenType::STRING => LiteralValue::String(
+                self.file[self.start_pos + 1..self.current_pos - 1].to_string(),
+            ),
+            _ => LiteralValue::Nil,
+        };
+        list.push(Token {
+            token_type,
+            literal,
+            lexeme,
+            line: self.line,
+        })
     }
 
     fn get_token_list(&mut self) -> Vec<Token> {
         let mut list: Vec<Token> = Vec::new();
         while let Some(a) = self.advance() {
+            self.start_pos = self.current_pos - 1;
             match a {
-                '(' => Self::add_token(&mut list, Token::LEFT_PAREN),
-                ')' => Self::add_token(&mut list, Token::RIGHT_PAREN),
-                '{' => Self::add_token(&mut list, Token::RIGHT_BRACE),
-                '}' => Self::add_token(&mut list, Token::LEFT_BRACE),
-                ',' => Self::add_token(&mut list, Token::COMMA),
-                ';' => Self::add_token(&mut list, Token::SEMICOLON),
-                '.' => Self::add_token(&mut list, Token::DOT),
-                '-' => Self::add_token(&mut list, Token::MINUS),
-                '+' => Self::add_token(&mut list, Token::PLUS),
-                '*' => Self::add_token(&mut list, Token::STAR),
+                '(' => self.add_token(&mut list, TokenType::LEFT_PAREN),
+                ')' => self.add_token(&mut list, TokenType::RIGHT_PAREN),
+                '{' => self.add_token(&mut list, TokenType::RIGHT_BRACE),
+                '}' => self.add_token(&mut list, TokenType::LEFT_BRACE),
+                ',' => self.add_token(&mut list, TokenType::COMMA),
+                ';' => self.add_token(&mut list, TokenType::SEMICOLON),
+                '.' => self.add_token(&mut list, TokenType::DOT),
+                '-' => self.add_token(&mut list, TokenType::MINUS),
+                '+' => self.add_token(&mut list, TokenType::PLUS),
+                '*' => self.add_token(&mut list, TokenType::STAR),
 
-                '!' => if self.matching('=') {
-                    Self::add_token(&mut list, Token::BANG_EQUAL)
-                } else {
-                    Self::add_token(&mut list, Token::BANG)
-                },
-                '<' => if self.matching('=') {
-                    Self::add_token(&mut list, Token::LESS_EQUAL)
-                } else {
-                    Self::add_token(&mut list, Token::LESS)
-                },
-                '>' => if self.matching('=') {
-                    Self::add_token(&mut list, Token::GREATER_EQUAL)
-                } else {
-                    Self::add_token(&mut list, Token::GREATER)
-                },
-                '=' => if self.matching('=') {
-                    Self::add_token(&mut list, Token::EQUAL_EQUAL)
-                } else {
-                    Self::add_token(&mut list, Token::EQUAL)
-                },
+                '!' => {
+                    if self.matching('=') {
+                        self.add_token(&mut list, TokenType::BANG_EQUAL)
+                    } else {
+                        self.add_token(&mut list, TokenType::BANG)
+                    }
+                }
+                '<' => {
+                    if self.matching('=') {
+                        self.add_token(&mut list, TokenType::LESS_EQUAL)
+                    } else {
+                        self.add_token(&mut list, TokenType::LESS)
+                    }
+                }
+                '>' => {
+                    if self.matching('=') {
+                        self.add_token(&mut list, TokenType::GREATER_EQUAL)
+                    } else {
+                        self.add_token(&mut list, TokenType::GREATER)
+                    }
+                }
+                '=' => {
+                    if self.matching('=') {
+                        self.add_token(&mut list, TokenType::EQUAL_EQUAL)
+                    } else {
+                        self.add_token(&mut list, TokenType::EQUAL)
+                    }
+                }
 
                 '/' => {
                     if self.matching('/') {
-                        while let Some(s) = self.peek(0) {
+                        while let Some(s) = self.peek_by(0) {
                             if s == '\n' {
                                 self.line += 1;
                                 self.advance();
@@ -289,12 +392,13 @@ impl Lexer {
                             }
                             self.advance();
                         }
-                    } else if self.matching('*') {  // Challenges 4.
+                    } else if self.matching('*') {
+                        // Challenges 4.
                         let mut closed = false;
                         let start = self.line;
-                        while let Some(s) = self.peek(0) {
+                        while let Some(s) = self.peek_by(0) {
                             if s == '*' {
-                                if let Some('/') = self.peek(1) {
+                                if let Some('/') = self.peek_by(1) {
                                     self.advance_by(2);
                                     closed = true;
                                     break;
@@ -306,29 +410,105 @@ impl Lexer {
                             self.advance();
                         }
                         if !closed {
-                            self.error(self.line, &format!("An unclosed multi-line comment that starts on line {start}."));
+                            self.error(
+                                self.line,
+                                &format!(
+                                    "An unclosed multi-line comment that starts on line {start}."
+                                ),
+                            );
                         }
                     } else {
-                        Self::add_token(&mut list, Token::SLASH);
+                        self.add_token(&mut list, TokenType::SLASH);
                     }
                 }
 
                 ' ' | '\r' | '\t' => (),
                 '\n' => self.line += 1,
 
-                '"' => Self::add_token(&mut list, self.scan_string()),
+                '"' => {
+                    let token_type = self.scan_string();
+                    self.add_token(&mut list, token_type);
+                }
                 _ => {
                     if a.is_numeric() {
-                        Self::add_token(&mut list, self.scan_number());
+                        let token_type = self.scan_number();
+                        self.add_token(&mut list, token_type);
                     } else if a.is_alphabetic() {
-                        Self::add_token(&mut list, self.scan_identifier());
+                        let token_type = self.scan_identifier();
+                        self.add_token(&mut list, token_type);
                     } else {
                         self.error(self.line, "Unexpected character.");
                     }
                 }
             }
         }
-        list.push(Token::EOF);
+        list.push(Token {
+            token_type: TokenType::EOF,
+            lexeme: "".to_string(),
+            line: self.line,
+            literal: LiteralValue::Nil,
+        });
         list
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::libs::lex::LiteralValue::{Nil, Number, String};
+    use crate::libs::lex::TokenType::{EOF, EQUAL, IDENTIFIER, LET, NUMBER, SEMICOLON, STRING};
+    use crate::libs::lex::{Token, TokenType};
+    use crate::Lox;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test() {
+        let keywords: HashMap<&'static str, TokenType> = HashMap::from([
+            ("or", TokenType::OR),
+            ("and", TokenType::AND),
+            ("box", TokenType::BOX),
+            ("else", TokenType::ELSE),
+            ("if", TokenType::IF),
+            ("fun", TokenType::FUN),
+            ("print", TokenType::PRINT),
+            ("return", TokenType::RETURN),
+            ("super", TokenType::SUPER),
+            ("self", TokenType::SELF),
+            ("true", TokenType::TRUE),
+            ("false", TokenType::FALSE),
+            ("let", TokenType::LET),
+            ("while", TokenType::WHILE),
+            ("nil", TokenType::NIL),
+        ]);
+
+        let file = "let x = \"smth\";".to_string();
+
+        let mut lex = Lox {
+            file,
+
+            start_pos: 0,
+            current_pos: 0,
+            gotten_error: false,
+            line: 1,
+
+            keywords,
+        };
+        let a = lex.get_token_list();
+        let a_correct = vec![
+            Token::new(LET, Nil, 1, "let".to_string()),
+            Token::new(IDENTIFIER, Nil, 1, "x".to_string()),
+            Token::new(EQUAL, Nil, 1, "=".to_string()),
+            Token::new(
+                STRING,
+                String("smth".to_string()),
+                1,
+                "\"smth\"".to_string(),
+            ),
+            Token::new(SEMICOLON, Nil, 1, ";".to_string()),
+            Token::new(EOF, Nil, 1, "".to_string()),
+        ];
+        assert_eq!(a.len(), a_correct.len());
+        for i in 0..a.len() {
+            assert_eq!(a[i].to_string(), a_correct[i].to_string());
+        }
     }
 }

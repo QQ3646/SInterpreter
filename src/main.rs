@@ -1,11 +1,9 @@
-use log::{debug, error, log_enabled, info, Level};
-
 mod libs;
-use libs::lex::Lexer;
+use libs::lex::Lox;
 
 fn main() {
     env_logger::init();
-    let lex = Lexer::init();
+    let lex = Lox::init();
     if let Err(error) = lex {
         eprintln!("Gotten error: {}", error);
         return;

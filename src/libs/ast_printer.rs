@@ -1,11 +1,11 @@
 use crate::libs::expr::{visitor::Visitor, ast::Expr};
 
-struct AstPrinter {}
+pub struct AstPrinter {}
 
 impl Visitor<String> for AstPrinter {
     fn visit_binary(&mut self, binary: &Expr) -> String {
         if let Expr::Binary { ref left, ref operator, ref right } = binary {
-            return self.parenthesize(operator.to_string(), vec![left, right]);
+            return self.parenthesize(operator.lexeme.to_string(), vec![left, right]);
         }
         "Something went wrong".to_string()
     }
@@ -26,7 +26,7 @@ impl Visitor<String> for AstPrinter {
 
     fn visit_unary(&mut self, unary: &Expr) -> String {
         if let Expr::Unary { ref operator, ref right } = unary {
-            return self.parenthesize(operator.to_string(), vec![right]);
+            return self.parenthesize(operator.lexeme.to_string(), vec![right]);
         }
         "Something went wrong".to_string()
     }
@@ -57,7 +57,7 @@ mod test {
     use crate::libs::ast_printer::AstPrinter;
     use crate::libs::expr::ast::{Expr, Object};
     use crate::libs::expr::visitor::Visitor;
-    use crate::libs::lex::Token;
+    use crate::libs::lex::{LiteralValue, Token, TokenType};
 
     // Ok
     #[test]
@@ -65,10 +65,20 @@ mod test {
         let some_expr = Some(Box::new(Expr::Binary {
             left: Some(Box::new(Expr::Unary
             {
-                operator: Token::MINUS,
+                operator: Token {
+                    token_type: TokenType::MINUS,
+                    line: 1,
+                    lexeme: "-".to_string(),
+                    literal: LiteralValue::Nil,
+                },
                 right: Some(Box::new(Expr::Literal { value: Object::Number(123f64) })),
             })),
-            operator: Token::STAR,
+            operator: Token {
+                token_type: TokenType::STAR,
+                line: 1,
+                lexeme: "*".to_string(),
+                literal: LiteralValue::Nil,
+            },
             right: Some(Box::new(Expr::Grouping {
                 expression: Some(Box::new(Expr::Literal { value: Object::Number(45.67) }))
             })),
